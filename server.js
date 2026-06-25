@@ -32,62 +32,39 @@ app.get("/traffic", async (req, res) => {
   const { domain } = req.query;
   if (!domain) return res.status(400).json({ error: "Falta domain" });
 
-  try {
-    const url = `https://www.similarweb.com/website/${domain}/`;
+  const cleanDomain = domain.replace(/^www\./, "");
 
-    const response = await fetch(url, {
+  try {
+    // API interna de SimilarWeb usada por sus propios widgets públicos
+    const apiUrl = `https://data.similarweb.com/api/v1/data?domain=${cleanDomain}`;
+
+    const response = await fetch(apiUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Cache-Control": "no-cache",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.similarweb.com/",
+        "Origin": "https://www.similarweb.com",
       },
     });
 
-    if (!response.ok) {
-      return res.json({ visits: null, formatted: "No disponible" });
-    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-    const html = await response.text();
+    const data = await response.json();
 
-    // SimilarWeb embebe los datos en __NEXT_DATA__ como JSON
-    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-
-    if (nextDataMatch) {
-      try {
-        const nextData = JSON.parse(nextDataMatch[1]);
-        // Navegar por la estructura de datos de SimilarWeb
-        const props = nextData?.props?.pageProps;
-        const visits =
-          props?.websiteAnalysis?.engagements?.visits ||
-          props?.snapshot?.engagements?.visits ||
-          props?.overview?.engagements?.visits ||
-          findVisits(nextData);
-
-        if (visits && visits > 0) {
-          return res.json({ visits, formatted: formatVisits(visits) });
-        }
-      } catch (_) {}
-    }
-
-    // Fallback: buscar patrones numéricos en el HTML
-    const patterns = [
-      /"totalVisits"\s*:\s*([\d.]+)/i,
-      /"visits"\s*:\s*([\d.]+)/i,
-      /totalVisits['":\s]+([\d.]+)/i,
-      /"Total Visits[^"]*"\s*,\s*"value"\s*:\s*"?([\d.,KkMmBb]+)"?/i,
-    ];
-
-    for (const pattern of patterns) {
-      const match = html.match(pattern);
-      if (match) {
-        const raw = match[1].replace(/,/g, "");
-        const num = parseFloat(raw);
-        if (num > 0) {
-          return res.json({ visits: num, formatted: formatVisits(num) });
-        }
+    // EstimatedMonthlyVisits tiene los últimos meses como objeto {fecha: visitas}
+    const visits = data?.EstimatedMonthlyVisits;
+    if (visits && typeof visits === "object") {
+      const months = Object.keys(visits).sort();
+      const lastVisits = visits[months[months.length - 1]];
+      if (lastVisits > 0) {
+        return res.json({ visits: lastVisits, formatted: formatVisits(lastVisits) });
       }
+    }
+
+    // Fallback a Engagments.Visits
+    const eng = data?.Engagments?.Visits;
+    if (eng && eng > 0) {
+      return res.json({ visits: eng, formatted: formatVisits(eng) });
     }
 
     return res.json({ visits: null, formatted: "No disponible" });
@@ -97,19 +74,6 @@ app.get("/traffic", async (req, res) => {
     return res.json({ visits: null, formatted: "No disponible" });
   }
 });
-
-// Buscar el campo visits recursivamente en el objeto JSON
-function findVisits(obj, depth = 0) {
-  if (depth > 8 || !obj || typeof obj !== "object") return null;
-  for (const key of Object.keys(obj)) {
-    if (key === "visits" && typeof obj[key] === "number" && obj[key] > 1000) {
-      return obj[key];
-    }
-    const found = findVisits(obj[key], depth + 1);
-    if (found) return found;
-  }
-  return null;
-}
 
 function formatVisits(n) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M / mes`;
