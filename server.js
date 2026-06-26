@@ -180,6 +180,87 @@ function parseClaudeResponse(text) {
   };
 }
 
+// ── Análisis de competidor (Modo Espía) ──────────────────────
+app.post("/spy", rateLimit({ windowMs: 10 * 60 * 1000, max: 5 }), async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: "Falta la URL" });
+
+  if (!process.env.CLAUDE_API_KEY) {
+    return res.status(500).json({ error: "API key no configurada" });
+  }
+
+  try {
+    // Intentar obtener el HTML de la página para dar contexto a Claude
+    let pageContext = "";
+    try {
+      const pageRes = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept": "text/html",
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (pageRes.ok) {
+        const html = await pageRes.text();
+        // Extraer solo el texto útil (título, meta description, h1, h2, párrafos)
+        const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || "";
+        const desc = (html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) || [])[1] || "";
+        const h1 = (html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || [])[1] || "";
+        const h2s = [...html.matchAll(/<h2[^>]*>([^<]+)<\/h2>/gi)].map(m => m[1]).slice(0, 5).join(" | ");
+        const ogTitle = (html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i) || [])[1] || "";
+        const price = (html.match(/["']price["'][^>]*>([\d.,€$£]+)/i) || [])[1] || "";
+        pageContext = `Título: ${ogTitle || title}\nDescripción: ${desc}\nH1: ${h1}\nH2s: ${h2s}\nPrecio detectado: ${price}`.trim();
+      }
+    } catch (_) {
+      pageContext = `URL analizada: ${url}`;
+    }
+
+    const prompt = `Eres un experto en marketing y ventas con 10 años de experiencia analizando páginas de producto para ecommerce y dropshipping. Hablas en español claro, como si le explicaras a alguien que empieza.
+
+Analiza esta página de producto como experto en marketing:
+URL: ${url}
+${pageContext ? `\nCONTEXTO EXTRAÍDO DE LA PÁGINA:\n${pageContext}` : ""}
+
+Responde SOLO con este JSON (sin markdown, sin backticks, sin texto adicional):
+
+{"cliente":{"perfil":"Quién es exactamente: edad aproximada, sexo o si es unisex, situación de vida. Explícalo en 2-3 frases como si hablaras de una persona real.","problema":"Qué problema o dolor concreto tiene que le lleva a buscar esto. Sé específico.","deseo_profundo":"Qué desea de verdad por debajo de ese problema. El deseo emocional real, no el racional.","frustraciones":"Qué le frustra o qué ha probado antes sin éxito. Qué le ha fallado.","miedo_oculto":"Qué le daría vergüenza o miedo admitir sobre este problema. Lo que no diría en voz alta."},"venta":{"emocion_principal":"Qué emoción principal usan para vender: miedo, vergüenza, deseo, comodidad, estatus, etc. Explica por qué.","promesa_central":"El titular o promesa central de la página. Qué le están prometiendo al cliente.","argumentos":["Argumento más fuerte 1: explicado claramente","Argumento más fuerte 2","Argumento más fuerte 3"],"objeciones":[{"objecion":"Objeción que tendría el cliente","respuesta":"Cómo la resuelve la página — o si no la resuelve, explica qué falta"},{"objecion":"Objeción 2","respuesta":"Respuesta 2"},{"objecion":"Objeción 3","respuesta":"Respuesta 3"}]},"conclusion":{"lo_que_hace_bien":"Qué hace muy bien esta página para vender. Explica 2-3 cosas concretas.","lo_que_le_falta":"Qué le falta para vender más. Sé específico, no genérico.","consejo_accionable":"Un consejo concreto que podrías aplicar tú si vendieras este producto."}}`;
+
+    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.CLAUDE_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 3000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!claudeRes.ok) throw new Error(`Error Claude: ${claudeRes.status}`);
+
+    const data = await claudeRes.json();
+    const text = data.content[0].text.trim()
+      .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch (_) {
+      const start = text.indexOf("{"); const end = text.lastIndexOf("}");
+      result = JSON.parse(text.slice(start, end + 1));
+    }
+
+    res.json({ success: true, result });
+
+  } catch (err) {
+    console.error("Spy error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`✅ DropPilot backend corriendo en puerto ${PORT}`);
 });
