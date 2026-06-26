@@ -215,15 +215,15 @@ app.post("/spy", rateLimit({ windowMs: 10 * 60 * 1000, max: 5 }), async (req, re
       pageContext = `URL analizada: ${url}`;
     }
 
-    const prompt = `Eres un experto en marketing y ventas con 10 años de experiencia analizando páginas de producto para ecommerce y dropshipping. Hablas en español claro, como si le explicaras a alguien que empieza.
+    const prompt = `Eres experto en marketing y ventas para ecommerce. Hablas en español claro para alguien que empieza.
 
-Analiza esta página de producto como experto en marketing:
+Analiza esta página de producto:
 URL: ${url}
-${pageContext ? `\nCONTEXTO EXTRAÍDO DE LA PÁGINA:\n${pageContext}` : ""}
+${pageContext ? `\nCONTEXTO:\n${pageContext}` : ""}
 
-Responde SOLO con este JSON (sin markdown, sin backticks, sin texto adicional):
+Responde SOLO con JSON válido, sin markdown, sin backticks:
 
-{"cliente":{"perfil":"Quién es exactamente: edad aproximada, sexo o si es unisex, situación de vida. Explícalo en 2-3 frases como si hablaras de una persona real.","problema":"Qué problema o dolor concreto tiene que le lleva a buscar esto. Sé específico.","deseo_profundo":"Qué desea de verdad por debajo de ese problema. El deseo emocional real, no el racional.","frustraciones":"Qué le frustra o qué ha probado antes sin éxito. Qué le ha fallado.","miedo_oculto":"Qué le daría vergüenza o miedo admitir sobre este problema. Lo que no diría en voz alta."},"venta":{"emocion_principal":"Qué emoción principal usan para vender: miedo, vergüenza, deseo, comodidad, estatus, etc. Explica por qué.","promesa_central":"El titular o promesa central de la página. Qué le están prometiendo al cliente.","argumentos":["Argumento más fuerte 1: explicado claramente","Argumento más fuerte 2","Argumento más fuerte 3"],"objeciones":[{"objecion":"Objeción que tendría el cliente","respuesta":"Cómo la resuelve la página — o si no la resuelve, explica qué falta"},{"objecion":"Objeción 2","respuesta":"Respuesta 2"},{"objecion":"Objeción 3","respuesta":"Respuesta 3"}]},"conclusion":{"lo_que_hace_bien":"Qué hace muy bien esta página para vender. Explica 2-3 cosas concretas.","lo_que_le_falta":"Qué le falta para vender más. Sé específico, no genérico.","consejo_accionable":"Un consejo concreto que podrías aplicar tú si vendieras este producto."}}`;
+{"cliente":{"perfil":"Quién es: edad, sexo, situación de vida en 2 frases.","problema":"Su dolor concreto en 1-2 frases.","deseo_profundo":"Su deseo emocional real en 1-2 frases.","frustraciones":"Qué ha probado sin éxito en 1-2 frases.","miedo_oculto":"Lo que no admitiría en voz alta en 1 frase."},"venta":{"emocion_principal":"Emoción que usan para vender y por qué en 2 frases.","promesa_central":"La promesa central de la página en 1 frase.","argumentos":["Argumento 1 en 1 frase","Argumento 2 en 1 frase","Argumento 3 en 1 frase"],"objeciones":[{"objecion":"Objeción 1","respuesta":"Cómo la resuelve o qué falta"},{"objecion":"Objeción 2","respuesta":"Respuesta"},{"objecion":"Objeción 3","respuesta":"Respuesta"}]},"conclusion":{"lo_que_hace_bien":"2-3 cosas concretas que hace bien en 2 frases.","lo_que_le_falta":"Qué le falta para vender más en 2 frases.","consejo_accionable":"Un consejo concreto en 1-2 frases."}}`;
 
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
